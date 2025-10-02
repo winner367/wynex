@@ -21,10 +21,13 @@ from strategy_engine import StrategyEngine
 from bot_config_parser import BotConfigParser
 from broker_api import create_broker_api
 from utils import generate_robot_svg, apply_conditional_formatting
-from auth_api import (
+from auth_utils import (
     auth_api, 
     UserRole, 
-    initialize_auth_state
+    initialize_auth_state,
+    login_user,
+    register_user,
+    verify_token
 )
 from admin_dashboard import show_admin_dashboard
 from deriv_oauth import DerivOAuth, handle_oauth_flow, is_deriv_connected, get_current_balance, check_oauth_callback, get_token
@@ -57,7 +60,7 @@ def show_deriv_status():
         st.sidebar.warning("Not connected to Deriv")
         if st.sidebar.button("Connect to Deriv", key="connect_deriv_btn"):
             # Redirect to Deriv OAuth with proper parameters
-            app_id = "74474"  # Updated Deriv App ID
+            app_id = "105016"
             base_url = "https://05fd-102-219-210-201.ngrok-free.app/callback"
             redirect_uri = f"{base_url}/dashboard"  # Redirect directly to dashboard
             
@@ -228,7 +231,7 @@ def show_user_profile():
         
         if st.button("Connect to Deriv", key="profile_connect_deriv"):
             # Redirect to Deriv OAuth with proper parameters
-            app_id = "74474"  # Updated Deriv App ID
+            app_id = "105016"
             base_url = "https://05fd-102-219-210-201.ngrok-free.app/callback"
             redirect_uri = f"{base_url}/dashboard"
             
@@ -383,7 +386,7 @@ if check_oauth_callback():
     # Try to connect with the obtained token
     token = get_token()
     if token:
-        app_id = "74474"  # Updated Deriv App ID
+        app_id = "105016"
         try:
             broker_api = create_broker_api("deriv", app_id=app_id)
             if broker_api.connect_with_token(token):

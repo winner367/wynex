@@ -113,8 +113,8 @@ def show_login_ui():
     password = st.sidebar.text_input("Password", type="password", key="login_password")
 
     admin_email = "williamsamoe2023@gmail.com"
-    DERIV_APP_ID = "74474"
-    DERIV_REDIRECT_URI = "https://837c-102-219-210-201.ngrok-free.app/callback"
+    DERIV_APP_ID = "105016"
+    DERIV_REDIRECT_URI = "https://www.winnerprinter.top"
     DERIV_OAUTH_URL = f"https://oauth.deriv.com/oauth2/authorize?app_id={DERIV_APP_ID}&redirect_uri={DERIV_REDIRECT_URI}"
 
     if email and email.lower() == admin_email:
@@ -293,10 +293,10 @@ def show_user_profile():
             st.success("Password updated successfully")
             st.rerun()
 
-DERIV_APP_ID = "74474"
-DERIV_REDIRECT_URI = "https://837c-102-219-210-201.ngrok-free.app/callback"
+DERIV_APP_ID = "105016"
+DERIV_REDIRECT_URI = "https://www.winnerprinter.top"
 DERIV_OAUTH_URL = f"https://oauth.deriv.com/oauth2/authorize?app_id={DERIV_APP_ID}&redirect_uri={DERIV_REDIRECT_URI}"
-DERIV_API_URL = "wss://ws.binaryws.com/websockets/v3?app_id=74474"
+DERIV_API_URL = "wss://ws.binaryws.com/websockets/v3?app_id=105016"
 
 def show_deriv_oauth_button():
     st.markdown(f"[Login or Create Account with Deriv.com]({DERIV_OAUTH_URL})", unsafe_allow_html=True)
@@ -307,9 +307,9 @@ show_deriv_oauth_button()
 # --- OAuth Callback Handler ---
 def handle_deriv_oauth_callback():
     # Parse the query params for 'code' (if redirected back)
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     if 'code' in query_params:
-        code = query_params['code'][0]
+        code = query_params.get('code')
         # Exchange code for token (Deriv uses implicit grant, so code is token)
         token = code  # For Deriv, the code is the token
         st.session_state['deriv_token'] = token
@@ -402,16 +402,16 @@ def show_admin_login_ui():
 
 def show_user_login_ui():
     st.header("User Login")
-    DERIV_APP_ID = "74474"
-    DERIV_REDIRECT_URI = "https://837c-102-219-210-201.ngrok-free.app/callback"
+    DERIV_APP_ID = "105016"
+    DERIV_REDIRECT_URI = "https://www.winnerprinter.top"
     DERIV_OAUTH_URL = f"https://oauth.deriv.com/oauth2/authorize?app_id={DERIV_APP_ID}&redirect_uri={DERIV_REDIRECT_URI}"
     
     st.markdown(f"[Login or Create Account with Deriv.com]({DERIV_OAUTH_URL})", unsafe_allow_html=True)
     
     # Handle OAuth callback
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     if 'code' in query_params:
-        token = query_params['code'][0]
+        token = query_params.get('code')
         st.session_state.is_authenticated = True
         st.session_state.current_user = f"deriv_user_{token[:8]}"
         st.session_state.current_user_role = "user"

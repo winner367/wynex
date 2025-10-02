@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
-from auth_api import auth_api, UserRole
+from auth_utils import auth_api, UserRole, login_user, register_user, verify_token
 
 def format_datetime(dt):
     if isinstance(dt, str):
@@ -173,7 +173,7 @@ def show_system_settings():
     
     deriv_app_id = st.text_input(
         "Deriv App ID",
-        value="71514",
+        value="105016",
         type="password"
     )
     

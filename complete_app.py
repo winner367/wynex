@@ -8,12 +8,15 @@ import time
 from datetime import datetime, timedelta
 
 # Import custom modules
-from auth_api import (
+from auth_utils import (
     is_authenticated, 
     is_admin, 
     get_current_user, 
     logout, 
-    initialize_auth_state
+    initialize_auth_state,
+    login_user,
+    register_user,
+    verify_token
 )
 from auth_pages import (
     show_auth_ui, 

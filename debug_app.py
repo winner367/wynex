@@ -49,8 +49,8 @@ except Exception as e:
     st.code(traceback.format_exc())
     
 try:
-    from auth_api import is_authenticated, is_admin, get_current_user
-    st.success("✅ Successfully imported auth_api")
+    from auth_utils import is_authenticated, is_admin, get_current_user, login_user, register_user, verify_token
+    st.success("✅ Successfully imported auth_utils")
 except Exception as e:
     st.error(f"❌ Error importing auth_api: {str(e)}")
     st.code(traceback.format_exc())

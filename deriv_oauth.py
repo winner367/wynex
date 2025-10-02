@@ -3,19 +3,19 @@ import requests
 import json
 import secrets
 from typing import Dict, Any, Optional, Tuple
-from auth_api import auth_api
+from auth_utils import auth_api, login_user, register_user, verify_token
 
 # Constants
 OAUTH_BASE_URL = "https://oauth.deriv.com/oauth2/authorize"
 TOKEN_URL = "https://oauth.deriv.com/oauth2/token"
-APP_ID = "71514"  # Your Deriv App ID
-REDIRECT_URI = "https://ce51-102-219-210-201.ngrok-free.app/oauth/callback"
+APP_ID = "105016"  # Your Deriv App ID
+REDIRECT_URI = "https://www.winnerprinter.top/callback"
 SCOPES = "read trade admin payments"
 
 class DerivOAuth:
     def __init__(self):
-        self.app_id = "71514"  # Your Deriv App ID
-        self.redirect_uri = "http://localhost:8501/callback"  # Must match your app's redirect URI
+        self.app_id = "105016"  # Your Deriv App ID
+        self.redirect_uri = "https://www.winnerprinter.top/callback"  # Must match your app's redirect URI
         
     def get_auth_url(self) -> str:
         """Generate the OAuth authorization URL"""
@@ -139,8 +139,8 @@ def exchange_code_for_token(code: str) -> Dict[str, Any]:
 def handle_oauth_flow():
     """Handle the complete OAuth flow"""
     # Use the query_params API
-    if 'code' in st.experimental_get_query_params():
-        code = st.experimental_get_query_params()['code']
+    if 'code' in st.query_params:
+        code = st.query_params.get('code')
         oauth = DerivOAuth()
         token_data = oauth.handle_oauth_callback(code)
         
@@ -156,7 +156,7 @@ def handle_oauth_flow():
                     auth_api.update_account_balances(current_user['email'], balances)
                 
                 # Clear query parameters and redirect to main page
-                st.experimental_get_query_params().clear()
+                st.query_params.clear()
                 st.rerun()
             else:
                 st.error("User not authenticated")
@@ -170,7 +170,7 @@ def check_oauth_callback() -> bool:
     Returns:
         True if this was an OAuth callback and it was handled successfully
     """
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     if 'code' in query_params or 'error' in query_params:
         token_info = handle_oauth_callback()
         return token_info is not None
@@ -185,16 +185,16 @@ def handle_oauth_callback() -> Optional[Dict[str, Any]]:
         Token information if successful, None otherwise
     """
     # Check for errors
-    if 'error' in st.experimental_get_query_params():
-        st.error(f"OAuth error: {st.experimental_get_query_params()['error']}")
+    if 'error' in st.query_params:
+        st.error(f"OAuth error: {st.query_params.get('error')}")
         return None
     
     # Check for authorization code
-    if 'code' not in st.experimental_get_query_params():
+    if 'code' not in st.query_params:
         return None
     
     # Verify state parameter to prevent CSRF attacks
-    state = st.experimental_get_query_params().get('state')
+    state = st.query_params.get('state')
     saved_state = st.session_state.get('oauth_state')
     
     if not state or state != saved_state:
@@ -202,7 +202,7 @@ def handle_oauth_callback() -> Optional[Dict[str, Any]]:
         return None
     
     # Exchange code for token
-    code = st.experimental_get_query_params()['code']
+    code = st.query_params.get('code')
     token_info = exchange_code_for_token(code)
     
     if 'error' in token_info:
