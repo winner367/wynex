@@ -238,12 +238,33 @@ def register_user(email: str, password: str, name: str, role: str = "user") -> b
 def verify_token(token: str) -> bool:
     return validate_token(token)
 
+# Simple wrapper functions for convenient imports
+def is_authenticated() -> bool:
+    """Return True if a user session is authenticated."""
+    return auth_api.is_authenticated()
+
+def is_admin() -> bool:
+    """Return True if current user has admin role."""
+    return auth_api.is_admin()
+
+def get_current_user() -> Optional[Dict]:
+    """Return current user dictionary or None."""
+    return auth_api.get_current_user()
+
+def logout():
+    """Logout current user and clear session flags."""
+    auth_api.logout()
+
 __all__ = [
     "AuthAPI",
     "auth_api",
     "UserRole",
     "UserProfile",
     "initialize_auth_state",
+    "is_authenticated",
+    "is_admin",
+    "get_current_user",
+    "logout",
     "login_user",
     "register_user",
     "verify_token",

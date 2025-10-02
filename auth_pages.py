@@ -5,6 +5,7 @@ import os
 import time
 from datetime import datetime
 from deriv_oauth import redirect_to_deriv_signup
+from auth_utils import register_user, login_user, get_current_user
 import requests
 from urllib.parse import urlencode, urlparse, parse_qs
 
@@ -36,55 +37,61 @@ def load_users_from_file():
             return {}
     return {}
 
-# Initialize users if not already in session state
-if 'users' not in st.session_state:
-    st.session_state.users = load_users_from_file()
-    
-    # Create admin user if no users exist
-    if not st.session_state.users:
-        st.session_state.users = {
-            "williamsamoe2023@gmail.com": {
-                "email": "williamsamoe2023@gmail.com",
-                "password": hash_password("12345678"),
-                "name": "Admin User",
-                "role": "admin",
-                "created_at": datetime.now().isoformat()
+def _ensure_users_initialized():
+    """Ensure st.session_state.users exists and seed default admin if empty."""
+    if 'users' not in st.session_state:
+        st.session_state.users = load_users_from_file()
+        if not st.session_state.users:
+            st.session_state.users = {
+                "williamsamoe2023@gmail.com": {
+                    "email": "williamsamoe2023@gmail.com",
+                    "password": hash_password("12345678"),
+                    "name": "Admin User",
+                    "role": "admin",
+                    "created_at": datetime.now().isoformat()
+                }
             }
-        }
-        save_users_to_file()
+            save_users_to_file()
 
 # Authentication functions
 def create_user(email, password, name, role="user"):
-    """Create a new user"""
-    if email in st.session_state.users:
-        return False
-        
-    st.session_state.users[email] = {
-        "email": email,
-        "password": hash_password(password),
-        "name": name,
-        "role": role,
-        "created_at": datetime.now().isoformat()
-    }
-    
-    save_users_to_file()
-    return True
+    """Create a new user and persist to database; mirror to session users for UI."""
+    _ensure_users_initialized()
+    # Persist via DB-backed auth
+    if register_user(email, password, name, role):
+        # Mirror to session store for legacy UI flows
+        st.session_state.users[email] = {
+            "email": email,
+            "password": hash_password(password),
+            "name": name,
+            "role": role,
+            "created_at": datetime.now().isoformat()
+        }
+        save_users_to_file()
+        return True
+    return False
 
 def authenticate_user(email, password):
-    """Authenticate a user"""
-    if email not in st.session_state.users:
+    """Authenticate a user using DB-backed auth; set session fields for UI."""
+    _ensure_users_initialized()
+    if not login_user(email, password):
         return False
-        
-    user = st.session_state.users[email]
-    
-    if user["password"] == hash_password(password):
-        st.session_state.is_authenticated = True
-        st.session_state.current_user = email
-        st.session_state.current_user_name = user["name"]
-        st.session_state.current_user_role = user["role"]
-        return True
-        
-    return False
+    # Populate UI session details from DB profile
+    user = get_current_user()
+    if user:
+        st.session_state.current_user_name = user.get("name", email)
+        st.session_state.current_user_role = user.get("role", "user")
+        # Keep a mirror record for legacy UIs
+        if email not in st.session_state.users:
+            st.session_state.users[email] = {
+                "email": email,
+                "password": hash_password(password),
+                "name": st.session_state.current_user_name,
+                "role": st.session_state.current_user_role,
+                "created_at": datetime.now().isoformat()
+            }
+            save_users_to_file()
+    return True
 
 def verify_password(email, password):
     """Verify a user's password"""
@@ -108,32 +115,25 @@ def logout():
 # UI Components
 def show_login_ui():
     """Display the login UI and handle login attempts"""
+    _ensure_users_initialized()
     st.sidebar.header("Login")
     email = st.sidebar.text_input("Email", key="login_email")
     password = st.sidebar.text_input("Password", type="password", key="login_password")
 
     admin_email = "williamsamoe2023@gmail.com"
-    DERIV_APP_ID = "105016"
-    DERIV_REDIRECT_URI = "https://www.winnerprinter.top"
-    DERIV_OAUTH_URL = f"https://oauth.deriv.com/oauth2/authorize?app_id={DERIV_APP_ID}&redirect_uri={DERIV_REDIRECT_URI}"
 
-    if email and email.lower() == admin_email:
-        # Show standard login for admin
-        if st.sidebar.button("Login", key="login_button"):
-            if authenticate_user(email, password):
-                st.sidebar.success("Login successful!")
-                return True
-            else:
-                st.sidebar.error("Invalid email or password")
-    elif email:
-        # For non-admin, show only Deriv OAuth login
-        st.sidebar.info("Please login with your Deriv account.")
-        st.sidebar.markdown(f"[Login with Deriv]({DERIV_OAUTH_URL})", unsafe_allow_html=True)
-        st.stop()
+    # Unified local account login for all users
+    if st.sidebar.button("Login", key="login_button"):
+        if authenticate_user(email, password):
+            st.sidebar.success("Login successful!")
+            return True
+        else:
+            st.sidebar.error("Invalid email or password")
     return False
 
 def show_register_ui():
     """Display the registration UI and handle registration attempts"""
+    _ensure_users_initialized()
     st.sidebar.header("Register")
     
     name = st.sidebar.text_input("Name", key="register_name")
@@ -170,6 +170,7 @@ def show_register_ui():
 
 def show_auth_ui():
     """Display authentication UI (login/register) and handle auth operations"""
+    _ensure_users_initialized()
     # Check if already logged in
     if st.session_state.get('is_authenticated', False):
         return True
@@ -301,10 +302,7 @@ DERIV_API_URL = "wss://ws.binaryws.com/websockets/v3?app_id=105016"
 def show_deriv_oauth_button():
     st.markdown(f"[Login or Create Account with Deriv.com]({DERIV_OAUTH_URL})", unsafe_allow_html=True)
 
-# Call this in your login/signup UI for new users
-show_deriv_oauth_button()
-
-# --- OAuth Callback Handler ---
+# --- OAuth Callback Handler (call from API Configuration page) ---
 def handle_deriv_oauth_callback():
     # Parse the query params for 'code' (if redirected back)
     query_params = st.query_params
@@ -375,8 +373,7 @@ def fetch_and_display_balances(token):
     st.info(f"Demo Account Balance: {balances['demo']}")
     st.info(f"Real Account Balance: {balances['real']}")
 
-# --- Call the callback handler at the top of your main login page ---
-handle_deriv_oauth_callback()
+ # Callback is invoked from pages that perform OAuth linking
 
 def show_admin_login_ui():
     st.header("Admin Login")

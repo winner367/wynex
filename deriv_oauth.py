@@ -125,7 +125,7 @@ def exchange_code_for_token(code: str) -> Dict[str, Any]:
     """
     data = {
         "grant_type": "authorization_code",
-        "client_id": APP_ID,
+        "app_id": APP_ID,
         "code": code,
         "redirect_uri": REDIRECT_URI
     }
@@ -154,9 +154,13 @@ def handle_oauth_flow():
                 balances = fetch_account_balances(token_data['access_token'])
                 if balances:
                     auth_api.update_account_balances(current_user['email'], balances)
-                
-                # Clear query parameters and redirect to main page
-                st.query_params.clear()
+                # Smooth redirect back to app (dashboard)
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                st.session_state.page = 'main'
+                st.session_state.deriv_connected = True
                 st.rerun()
             else:
                 st.error("User not authenticated")
@@ -216,6 +220,33 @@ def handle_oauth_callback() -> Optional[Dict[str, Any]]:
     # Store the token info in session state
     st.session_state.deriv_token = token_info
     st.session_state.deriv_connected = True
+    
+    # Persist token and fetch balances for both demo and real
+    try:
+        current_user = auth_api.get_current_user()
+        if current_user:
+            # Save token to user profile
+            auth_api.update_deriv_token(current_user['email'], token_info)
+        
+        access_token = token_info.get('access_token')
+        if access_token:
+            balances = fetch_account_balances(access_token)
+            if balances:
+                # Save in session for immediate use
+                st.session_state.account_balances = balances
+                # Persist to user profile if available
+                if current_user:
+                    auth_api.update_account_balances(current_user['email'], balances)
+    except Exception as e:
+        st.error(f"Post-login processing error: {str(e)}")
+    
+    # Clear query parameters and refresh to remove code/state from URL
+    try:
+        st.query_params.clear()
+        st.rerun()
+    except Exception:
+        # If rerun isn't available in this context, just return token
+        pass
     
     return token_info
 

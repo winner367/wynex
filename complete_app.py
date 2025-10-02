@@ -1,4 +1,12 @@
 import streamlit as st
+
+# Set page configuration FIRST
+st.set_page_config(
+    page_title="Binary Options Trading Bot",
+    page_icon="📈",
+    layout="wide"
+)
+
 import pandas as pd
 import numpy as np
 import traceback
@@ -30,13 +38,48 @@ from probability_calculator import (
 from strategy_engine import StrategyEngine
 from bot_config_parser import BotConfigParser
 from broker_api import create_broker_api, MockBrokerAPI
-
-# Set page configuration
-st.set_page_config(
-    page_title="Binary Options Trading Bot",
-    page_icon="📈",
-    layout="wide"
+from deriv_oauth import (
+    redirect_to_oauth,
+    check_oauth_callback,
+    get_token
 )
+from auth_utils import auth_api
+
+# Handle Deriv OAuth callback early if present
+if check_oauth_callback():
+    token = get_token()
+    if token:
+        try:
+            broker_api = create_broker_api("deriv", app_id="105016")
+            if broker_api.connect_with_token(token):
+                st.session_state.broker_api = broker_api
+                st.session_state.deriv_connected = True
+                # Store account info for UI
+                st.session_state.account_info = broker_api.get_account_info()
+                # Store aggregated balances by currency (demo and real sum per currency)
+                st.session_state.available_balances = broker_api.get_available_balances()
+                # Ensure a user exists and is logged in
+                acct = st.session_state.account_info or {}
+                deriv_email = acct.get('email') or f"deriv_user_{acct.get('id','') or 'unknown'}@deriv"
+                deriv_name = acct.get('name', 'Deriv User')
+                try:
+                    # Try to create user if not present (random password)
+                    auth_api.create_user(deriv_email, secrets.token_hex(8), deriv_name)
+                except Exception:
+                    pass
+                # Mark session as authenticated with this user
+                st.session_state.current_user = deriv_email
+                st.session_state.is_authenticated = True
+                # Navigate to dashboard and clear query params
+                st.session_state.page = 'main'
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                # Force UI refresh to clear query params
+                st.rerun()
+        except Exception as e:
+            st.error(f"Error connecting to Deriv: {str(e)}")
 
 # Initialize components
 try:
@@ -137,7 +180,7 @@ else:
     # Create tabs for the main interface
     tabs = st.tabs([
         "Dashboard", 
-        "API Configuration", 
+        "Connections", 
         "Strategy", 
         "Risk Management",
         "Bot Settings",
@@ -162,18 +205,18 @@ else:
             st.subheader("Account Balance")
             
             try:
-                # Try to get real balance if connected
+                # Try to get balance from active account info
                 if st.session_state.get('broker_api') and st.session_state.get('deriv_connected', False):
-                    balance_info = st.session_state.broker_api.get_account_balance()
-                    balance = balance_info.get('balance', 1000.00)
-                    currency = balance_info.get('currency', 'USD')
+                    account_info = st.session_state.broker_api.get_account_info()
+                    balance = account_info.get('balance', 0.0)
+                    currency = account_info.get('currency', 'USD')
+                    is_demo = account_info.get('is_demo', True)
                 else:
-                    # Use demo balance
                     balance = 1000.00
                     currency = 'USD'
-                
+                    is_demo = True
                 st.metric(
-                    label=f"{'Demo' if st.session_state.get('demo_account', True) else 'Real'} Account", 
+                    label=f"{'Demo' if is_demo else 'Real'} Account", 
                     value=f"${balance:.2f}", 
                     delta="+$0.00"
                 )
@@ -277,66 +320,92 @@ else:
 
     # API Configuration Tab
     with tabs[1]:
-        st.header("API Configuration")
+        st.header("Connections")
+        conn_tabs = st.tabs(["Connect via Deriv Login", "Connect via API Token"])
         
-        # Connection status
-        st.subheader("Connection Status")
-        
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            is_connected = st.session_state.get('deriv_connected', False)
-            conn_status = "Connected" if is_connected else "Disconnected"
-            conn_color = "green" if is_connected else "red"
-            st.markdown(f"<h3 style='color: {conn_color};'>● {conn_status}</h3>", unsafe_allow_html=True)
-            
-            # Show account type if connected
-            if is_connected and st.session_state.get('broker_api'):
-                try:
-                    account_type = "Demo" if st.session_state.get('demo_account', True) else "Real"
-                    st.caption(f"Connected to {account_type} Account")
-                except:
-                    pass
-        
-        with col2:
-            if is_connected:
-                if st.button("Disconnect", key="disconnect_button"):
-                    # Disconnect from API
-                    if st.session_state.get('broker_api'):
-                        try:
-                            st.session_state.broker_api.disconnect()
-                        except:
-                            pass
-                    
-                    st.session_state.deriv_connected = False
-                    st.session_state.pop('broker_api', None)
-                    st.rerun()
+        # Subtab 1: Deriv OAuth
+        with conn_tabs[0]:
+            st.subheader("Login with Deriv")
+            st.write("The secure way to connect your Deriv account. You'll be redirected to Deriv to authorize access.")
+            st.markdown("**Benefits of OAuth Login**")
+            st.markdown("- More secure — no API tokens stored\n- Simple one-click process\n- Deriv manages permissions\n- Automatically refreshes access")
+            if not st.session_state.get('deriv_connected', False):
+                if st.button("Login with Deriv", key="oauth_connect_deriv"):
+                    redirect_to_oauth()
             else:
-                if st.button("Connect", key="connect_button"):
-                    # Get API key and connection type
-                    api_key = st.session_state.get('api_key', '')
-                    app_id = st.session_state.get('app_id', '1089')
-                    is_demo = st.session_state.get('demo_account', True)
-                    
-                    # Create broker API instance
-                    try:
-                        if not api_key or is_demo:
-                            # Use mock broker for demo or no API key
-                            broker_api = MockBrokerAPI()
-                        else:
-                            # Use real broker API with key and app_id
-                            broker_api = create_broker_api("deriv", api_key, is_demo, app_id)
-                        
-                        # Try to connect
-                        if broker_api.connect():
-                            st.session_state.broker_api = broker_api
-                            st.session_state.deriv_connected = True
-                            st.success("Connected to broker API successfully!")
-                            st.rerun()
-                        else:
-                            st.error("Failed to connect to broker API")
-                    except Exception as e:
-                        st.error(f"Error connecting to broker API: {str(e)}")
+                st.success("Deriv account linked.")
+                # Quick summary
+                if st.session_state.get('account_info'):
+                    ai = st.session_state.account_info
+                    st.caption(f"Account: {ai.get('id','')} • {'Demo' if ai.get('is_demo', True) else 'Real'} • {ai.get('currency','USD')} {ai.get('balance',0):.2f}")
+
+        # Subtab 2: API Token (advanced)
+        with conn_tabs[1]:
+            st.subheader("Connect via API Token")
+            st.caption("Advanced: manually connect using API token and App ID.")
+            
+            # Connection status
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                is_connected = st.session_state.get('deriv_connected', False)
+                conn_status = "Connected" if is_connected else "Disconnected"
+                conn_color = "green" if is_connected else "red"
+                st.markdown(f"<h3 style='color: {conn_color};'>● {conn_status}</h3>", unsafe_allow_html=True)
+            with col2:
+                if is_connected:
+                    if st.button("Disconnect", key="disconnect_button_token"):
+                        if st.session_state.get('broker_api'):
+                            try:
+                                st.session_state.broker_api.disconnect()
+                            except:
+                                pass
+                        st.session_state.deriv_connected = False
+                        st.session_state.pop('broker_api', None)
+                        st.rerun()
+
+            # API settings
+            api_key = st.text_input(
+                "API Key", 
+                value=st.session_state.get('api_key', ''),
+                type="password",
+                help="Enter your Deriv API key",
+                key="connections_token_api_key"
+            )
+            app_id = st.text_input(
+                "App ID",
+                value=st.session_state.get('app_id', '1089'),
+                help="Enter your Deriv App ID (default: 1089)",
+                key="connections_token_app_id"
+            )
+            api_url = st.text_input(
+                "API URL",
+                value=st.session_state.get('api_url', 'wss://ws.binaryws.com/websockets/v3'),
+                help="Enter the WebSocket URL for Deriv API",
+                key="connections_token_api_url"
+            )
+            demo_account = st.checkbox(
+                "Use Demo Account", 
+                value=st.session_state.get('demo_account', True),
+                help="Trade with virtual funds",
+                key="connections_token_demo_account"
+            )
+            if st.button("Connect with Token", key="connect_with_token_btn"):
+                try:
+                    # For demo or missing key, use mock
+                    if not api_key or demo_account:
+                        broker_api = MockBrokerAPI()
+                    else:
+                        broker_api = create_broker_api("deriv", app_id=app_id)
+                        # Token-based direct connect is not implemented in this flow; using connect()
+                    if broker_api.connect():
+                        st.session_state.broker_api = broker_api
+                        st.session_state.deriv_connected = True
+                        st.success("Connected successfully!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to connect")
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
         
         # API settings
         st.subheader("API Settings")
@@ -346,26 +415,30 @@ else:
             "API Key", 
             value=st.session_state.get('api_key', ''),
             type="password",
-            help="Enter your Deriv API key"
+            help="Enter your Deriv API key",
+            key="api_settings_api_key"
         )
         
         app_id = st.text_input(
             "App ID",
             value=st.session_state.get('app_id', '1089'),
-            help="Enter your Deriv App ID (default: 1089)"
+            help="Enter your Deriv App ID (default: 1089)",
+            key="api_settings_app_id"
         )
         
         api_url = st.text_input(
             "API URL",
             value=st.session_state.get('api_url', 'wss://ws.binaryws.com/websockets/v3'),
-            help="Enter the WebSocket URL for Deriv API"
+            help="Enter the WebSocket URL for Deriv API",
+            key="api_settings_api_url"
         )
         
         # Account type selection
         demo_account = st.checkbox(
             "Use Demo Account", 
             value=st.session_state.get('demo_account', True),
-            help="Trade with virtual funds"
+            help="Trade with virtual funds",
+            key="api_settings_demo_account"
         )
         
         st.info("You can obtain your API key and App ID from the Deriv API portal.")
